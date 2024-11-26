@@ -39,9 +39,39 @@ else:
 # except Exception as e:
 #     print(f"Failed to save combined data due to error: {e}")
 
-# frequency analysis
+# Frequency analysis
 inflow = combined_data['Inflow(m^3/s)'].dropna()
-positive_inflow = inflow[inflow > 0]
+
+# Remove outliers using IQR method
+Q1 = inflow.quantile(0.25)
+Q3 = inflow.quantile(0.75)
+IQR = Q3 - Q1
+lower_bound = Q1 - 1.5 * IQR
+upper_bound = Q3 + 1.5 * IQR
+inflow_no_outliers = inflow[(inflow >= lower_bound) & (inflow <= upper_bound)]
+
+print(f"Original data size: {len(inflow)}")
+print(f"Data size after outlier removal: {len(inflow_no_outliers)}")
+
+# Visualize data before and after outlier removal
+# Histogram before outlier removal
+plt.figure(figsize=(10, 6))
+sns.histplot(inflow, bins=50, kde=True, color='skyblue')
+plt.title('Histogram of Inflow Data (Before Outlier Removal)')
+plt.xlabel('Inflow (m³/s)')
+plt.ylabel('Frequency')
+plt.show()
+
+# Histogram after outlier removal
+plt.figure(figsize=(10, 6))
+sns.histplot(inflow_no_outliers, bins=50, kde=True, color='green')
+plt.title('Histogram of Inflow Data (After Outlier Removal)')
+plt.xlabel('Inflow (m³/s)')
+plt.ylabel('Frequency')
+plt.show()
+
+# Proceed with positive inflow values
+positive_inflow = inflow_no_outliers[inflow_no_outliers > 0]
 
 distributions = {
     'Normal': stats.norm,
@@ -120,7 +150,7 @@ for name, dist in distributions.items():
             data = inflow
 
         # Adjust bin count for each distribution if necessary
-        bin_count = 5000  # You can adjust this number based on distribution
+        bin_count = 1000  # You can adjust this number based on distribution
 
         # Generate observed frequencies
         observed_counts, bin_edges = np.histogram(data, bins=bin_count)
@@ -205,25 +235,100 @@ print(
 print(f"Best-fit distribution based on KS Statistic: {best_fit_name_ks}")
 
 # Calculate return period inflows for the best-fit distribution (KS)
-if best_fit_name_ks in fitted_params:
-    best_fit_params = fitted_params[best_fit_name_ks]
+if best_fit_name_chi in fitted_params:
+    best_fit_params = fitted_params[best_fit_name_chi]
     T = [50, 100, 500]  # Return periods
     try:
-        return_period_inflows = [distributions[best_fit_name_ks].ppf(
+        return_period_inflows = [distributions[best_fit_name_chi].ppf(
             1 - 1/t, *best_fit_params) for t in T]
         # Format the results to four decimal places
         formatted_inflows = [
             f"{inflow_value:.4f}" for inflow_value in return_period_inflows]
-        print(f"\nReturn Period Inflows ({best_fit_name_ks}): {
+        print(f"\nReturn Period Inflows ({best_fit_name_chi}): {
               formatted_inflows}")
     except Exception as e:
-        print(f"Error calculating return periods for {best_fit_name_ks}: {e}")
+        print(f"Error calculating return periods for {best_fit_name_chi}: {e}")
 else:
     print(f"No fitted parameters found for {
-          best_fit_name_ks}. Cannot calculate return period inflows.")
+          best_fit_name_chi}. Cannot calculate return period inflows.")
+
+# New data for 2023
+new_data_path = os.path.join('./dataset', os.listdir('./dataset')[0])
+new_data = pd.read_excel(new_data_path, header=None, skiprows=3)
+new_data.columns = custom_columns
+new_inflow = new_data['Inflow(m^3/s)'].dropna()
+# # calculate percentile q1, q2, q3
+# q1 = np.percentile(new_inflow, 25)
+# q2 = np.percentile(new_inflow, 50)
+# q3 = np.percentile(new_inflow, 75)
+# print(f"Q1: {q1}, Q2: {q2}, Q3: {q3}")
+# # calculate IQR
+# iqr = q3 - q1
+# # calculate lower and upper bounds
+# lower_bound = q1 - 1.5 * iqr
+# upper_bound = q3 + 1.5 * iqr
+# # filter the new inflow data
+# new_inflow_filtered = new_inflow[(
+#     new_inflow >= lower_bound) & (new_inflow <= upper_bound)]
+# print(f"Original new data size: {len(new_inflow)}")
+# print(f"Filtered new data size: {len(new_inflow_filtered)}")
+
+# Calculate the 25th, 50th, and 75th percentile inflow of the new data
+q1 = np.percentile(new_inflow, 25)
+q2 = np.percentile(new_inflow, 50)
+q3 = np.percentile(new_inflow, 75)
+print(f"\n2023 Data Percentiles:")
+print(f"25th Percentile (Q1): {q1:.4f}")
+print(f"50th Percentile (Q2): {q2:.4f}")
+print(f"75th Percentile (Q3): {q3:.4f}")
+
+# Remove outliers from the new data using IQR method
+iqr_new = q3 - q1
+lower_bound_new = q1 - 1.5 * iqr_new
+upper_bound_new = q3 + 1.5 * iqr_new
+new_inflow_filtered = new_inflow[(new_inflow >= lower_bound_new) & (
+    new_inflow <= upper_bound_new)]
+
+print(f"Original new data size: {len(new_inflow)}")
+print(f"Filtered new data size: {len(new_inflow_filtered)}")
+
+# Estimate return period of each inflow percentile using the best-fit model from Chi-square test
+best_fit_params = fitted_params.get(best_fit_name_chi)
+if best_fit_params:
+    # For distributions that require positive data
+    if best_fit_name_chi in ['Log-Normal', 'Gamma', 'Weibull', 'Log-Pearson Type III']:
+        percentiles = [q1, q2, q3]
+        # Ensure that the percentiles are positive
+        percentiles = [max(p, 0.0001) for p in percentiles]
+        # Calculate the exceedance probability (CDF complement)
+        exceedance_probs = [
+            1 - distributions[best_fit_name_chi].cdf(p, *best_fit_params) for p in percentiles]
+    else:
+        percentiles = [q1, q2, q3]
+        # Calculate the exceedance probability (CDF complement)
+        exceedance_probs = [
+            1 - distributions[best_fit_name_chi].cdf(p, *best_fit_params) for p in percentiles]
+
+    # Estimate return periods
+    estimated_return_periods = [1 / prob if prob >
+                                0 else np.inf for prob in exceedance_probs]
+
+    # Format and display the results
+    print(f"\nEstimated Return Periods using {
+          best_fit_name_chi} distribution:")
+    for i, percentile in enumerate(['25th', '50th', '75th']):
+        return_period = estimated_return_periods[i]
+        if np.isinf(return_period):
+            print(f"{percentile} Percentile Inflow: Return Period is greater than available data (> {
+                  len(data)} years)")
+        else:
+            print(f"{percentile} Percentile Inflow: Return Period = {
+                  return_period:.2f} years")
+else:
+    print(f"No fitted parameters found for {
+          best_fit_name_chi}. Cannot estimate return periods.")
 
 # Visualization of each distribution and test
-
 # Plot histogram and PDFs
 plt.figure(figsize=(10, 6))
 sns.histplot(data, bins=50, kde=False, stat='density',
@@ -234,6 +339,8 @@ for name, dist in distributions.items():
     if params:
         y = dist.pdf(x, *params)
         plt.plot(x, y, label=name)
+plt.plot(x, stats.gamma.pdf(x, *fitted_params.get('Gamma')), label='Gamma PDF')
+
 plt.legend()
 plt.title('Histogram and Fitted PDFs')
 plt.xlabel('Inflow (m³/s)')
@@ -252,6 +359,8 @@ for name, dist in distributions.items():
     if params:
         cdf_fitted = dist.cdf(sorted_data, *params)
         plt.plot(sorted_data, cdf_fitted, label=f'{name} CDF')
+plt.plot(sorted_data, stats.gamma.cdf(
+    sorted_data, *fitted_params.get('Gamma')), label='Gamma CDF2')
 
 plt.legend()
 plt.title('Empirical CDF and Fitted CDFs')
