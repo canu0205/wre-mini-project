@@ -106,7 +106,7 @@ def combine_bins(observed_counts, expected_counts, bin_edges):
                 expected_counts = np.delete(expected_counts, i)
                 observed_counts = np.delete(observed_counts, i)
                 bin_edges = np.delete(bin_edges, i + 1)
-                i -= 1  # Stay at the same index to check the merged bin
+                i -= 1
             else:
                 # Merge with the next bin
                 expected_counts[i + 1] += expected_counts[i]
@@ -114,7 +114,6 @@ def combine_bins(observed_counts, expected_counts, bin_edges):
                 expected_counts = np.delete(expected_counts, i)
                 observed_counts = np.delete(observed_counts, i)
                 bin_edges = np.delete(bin_edges, i + 1)
-                # No need to decrement i; check the new bin at the same index
         else:
             i += 1
     return observed_counts, expected_counts, bin_edges
@@ -134,6 +133,7 @@ for name, dist in distributions.items():
             data = inflow
             params = dist.fit(data)
         fitted_params[name] = params
+        print(f"Fitted parameters for {name}: {params}")
     except Exception as e:
         print(f"Error fitting {name}: {e}")
 
@@ -150,7 +150,7 @@ for name, dist in distributions.items():
             data = inflow
 
         # Adjust bin count for each distribution if necessary
-        bin_count = 1000  # You can adjust this number based on distribution
+        bin_count = 700
 
         # Generate observed frequencies
         observed_counts, bin_edges = np.histogram(data, bins=bin_count)
@@ -234,10 +234,10 @@ print(
     f"\nBest-fit distribution based on Chi-square Statistic: {best_fit_name_chi}")
 print(f"Best-fit distribution based on KS Statistic: {best_fit_name_ks}")
 
-# Calculate return period inflows for the best-fit distribution (KS)
+# Calculate return period inflows for the best-fit distribution (Chi-square)
 if best_fit_name_chi in fitted_params:
     best_fit_params = fitted_params[best_fit_name_chi]
-    T = [50, 100, 500]  # Return periods
+    T = [50, 100, 500]
     try:
         return_period_inflows = [distributions[best_fit_name_chi].ppf(
             1 - 1/t, *best_fit_params) for t in T]
@@ -257,21 +257,6 @@ new_data_path = os.path.join('./dataset', os.listdir('./dataset')[0])
 new_data = pd.read_excel(new_data_path, header=None, skiprows=3)
 new_data.columns = custom_columns
 new_inflow = new_data['Inflow(m^3/s)'].dropna()
-# # calculate percentile q1, q2, q3
-# q1 = np.percentile(new_inflow, 25)
-# q2 = np.percentile(new_inflow, 50)
-# q3 = np.percentile(new_inflow, 75)
-# print(f"Q1: {q1}, Q2: {q2}, Q3: {q3}")
-# # calculate IQR
-# iqr = q3 - q1
-# # calculate lower and upper bounds
-# lower_bound = q1 - 1.5 * iqr
-# upper_bound = q3 + 1.5 * iqr
-# # filter the new inflow data
-# new_inflow_filtered = new_inflow[(
-#     new_inflow >= lower_bound) & (new_inflow <= upper_bound)]
-# print(f"Original new data size: {len(new_inflow)}")
-# print(f"Filtered new data size: {len(new_inflow_filtered)}")
 
 # Calculate the 25th, 50th, and 75th percentile inflow of the new data
 q1 = np.percentile(new_inflow, 25)
@@ -298,14 +283,11 @@ if best_fit_params:
     # For distributions that require positive data
     if best_fit_name_chi in ['Log-Normal', 'Gamma', 'Weibull', 'Log-Pearson Type III']:
         percentiles = [q1, q2, q3]
-        # Ensure that the percentiles are positive
         percentiles = [max(p, 0.0001) for p in percentiles]
-        # Calculate the exceedance probability (CDF complement)
         exceedance_probs = [
             1 - distributions[best_fit_name_chi].cdf(p, *best_fit_params) for p in percentiles]
     else:
         percentiles = [q1, q2, q3]
-        # Calculate the exceedance probability (CDF complement)
         exceedance_probs = [
             1 - distributions[best_fit_name_chi].cdf(p, *best_fit_params) for p in percentiles]
 
@@ -337,9 +319,11 @@ x = np.linspace(data.min(), data.max(), 1000)
 for name, dist in distributions.items():
     params = fitted_params.get(name)
     if params:
+        if name == 'Gamma':
+            continue
         y = dist.pdf(x, *params)
         plt.plot(x, y, label=name)
-plt.plot(x, stats.gamma.pdf(x, *fitted_params.get('Gamma')), label='Gamma PDF')
+plt.plot(x, stats.gamma.pdf(x, *fitted_params.get('Gamma')), label='Gamma')
 
 plt.legend()
 plt.title('Histogram and Fitted PDFs')
@@ -357,22 +341,15 @@ plt.step(sorted_data, ecdf, where='post', label='Empirical CDF')
 for name, dist in distributions.items():
     params = fitted_params.get(name)
     if params:
+        if name == 'Gamma':
+            continue
         cdf_fitted = dist.cdf(sorted_data, *params)
         plt.plot(sorted_data, cdf_fitted, label=f'{name} CDF')
 plt.plot(sorted_data, stats.gamma.cdf(
-    sorted_data, *fitted_params.get('Gamma')), label='Gamma CDF2')
+    sorted_data, *fitted_params.get('Gamma')), label='Gamma CDF')
 
 plt.legend()
 plt.title('Empirical CDF and Fitted CDFs')
 plt.xlabel('Inflow (m³/s)')
 plt.ylabel('Cumulative Probability')
 plt.show()
-
-# QQ Plots for each distribution
-for name, dist in distributions.items():
-    params = fitted_params.get(name)
-    if params:
-        plt.figure()
-        stats.probplot(data, dist=dist, sparams=params, plot=plt)
-        plt.title(f'QQ Plot for {name}')
-        plt.show()
