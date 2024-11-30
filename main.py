@@ -53,6 +53,18 @@ inflow_no_outliers = inflow[(inflow >= lower_bound) & (inflow <= upper_bound)]
 print(f"Original data size: {len(inflow)}")
 print(f"Data size after outlier removal: {len(inflow_no_outliers)}")
 
+# save data w/o outliers to excel
+# filtered_data = combined_data[(combined_data['Inflow(m^3/s)'] >=
+#                                lower_bound) & (combined_data['Inflow(m^3/s)'] <= upper_bound)]
+# output_file_path = './output/no_outliers_data.xlsx'
+# os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
+# try:
+#     filtered_data.to_excel(output_file_path, index=False,
+#                            sheet_name='No Outliers Data')
+#     print(f"Combined data successfully saved to {output_file_path}")
+# except Exception as e:
+#     print(f"Failed to save combined data due to error: {e}")
+
 # Visualize data before and after outlier removal
 # Histogram before outlier removal
 plt.figure(figsize=(10, 6))
